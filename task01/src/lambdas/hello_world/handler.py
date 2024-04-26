@@ -18,8 +18,7 @@ class HelloWorld(AbstractLambda):
             "statusCode": 200,
             "message": "Hello from Lambda"
         }
-        print(response)
-        return 200
+        return response
 
 
 HANDLER = HelloWorld()
