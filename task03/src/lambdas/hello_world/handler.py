@@ -25,7 +25,7 @@ class HelloWorld(AbstractLambda):
         # if event.get('path') == '/hello':
         return {
             'statusCode': 200,
-            'message': 'Hello from Lambda'}
+            'message': 'Hello from Lambda'
         }
 
 
