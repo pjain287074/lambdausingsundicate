@@ -20,7 +20,7 @@
         "target_topic": "lambda_topic",
         "region": "${region}"
       }
-   ]
+   ],
   "env_variables": {},
   "publish_version": false,
   "url_config": {},
