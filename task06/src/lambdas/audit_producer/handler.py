@@ -1,67 +1,53 @@
 import datetime
-import os
+import json
 import uuid
-
 import boto3
-
+from boto3.dynamodb.conditions import Key
 from commons.log_helper import get_logger
 from commons.abstract_lambda import AbstractLambda
 
 _LOG = get_logger('AuditProducer-handler')
-
+dynamodb = boto3.resource('dynamodb')
 
 class AuditProducer(AbstractLambda):
 
     def validate_request(self, event) -> dict:
         pass
-
+        
     def handle_request(self, event, context):
-        """Explain incoming event here"""
-        _LOG.info(event)
+        """
+        Explain incoming event here
+        """
+        audit_table = dynamodb.Table('Audit')
 
-        dynamodb = boto3.resource('dynamodb')
-        audit_table_name = os.environ.get('target_table')
-        _LOG.info(f'target_table: {audit_table_name}')
-        table = dynamodb.Table(audit_table_name)
+        for record in event['Records']:
+            new_image = record['dynamodb']['NewImage']
 
-        now = datetime.datetime.now()
-        iso_format = now.isoformat()
+            item_key = new_image['key']['S']
+            new_value = int(new_image['value']['N'])
 
-        if event['Records'][0]['eventName'] == 'INSERT':
-            item = {
+            audit_data = {
                 "id": str(uuid.uuid4()),
-                "itemKey": event['Records'][0]['dynamodb']['Keys']['key']['S'],
-                "modificationTime": iso_format,
+                "itemKey": item_key,
+                "modificationTime": datetime.datetime.now().isoformat(),
                 "newValue": {
-                    "key": event['Records'][0]['dynamodb']['NewImage']['key']['S'],
-                    "value": int(event['Records'][0]['dynamodb']['NewImage']['value']['N'])
+                    "key": item_key,
+                    "value": new_value
                 }
             }
-        elif event['Records'][0]['eventName'] == 'MODIFY':
-            item = {
-                "id": str(uuid.uuid4()),
-                "itemKey": event['Records'][0]['dynamodb']['Keys']['key']['S'],
-                "modificationTime": iso_format,
-                "updatedAttribute": "value",
-                "oldValue": int(event['Records'][0]['dynamodb']['OldImage']['value']['N']),
-                "newValue": int(event['Records'][0]['dynamodb']['NewImage']['value']['N'])
-            }
 
-        try:
-            response = table.put_item(Item=item)
-        except Exception as error:
-            _LOG.info(f'Error: {error}')
-            _LOG.info('Dirty hack!')
-            table = dynamodb.Table('cmtr-20cb4162-Audit-test')
-            response = table.put_item(Item=item)
+            if record['eventName'] == 'MODIFY':
+                old_image = record['dynamodb']['OldImage']
+                old_value = int(old_image['value']['N'])
 
-        _LOG.info(f'DynamoDb response: {response}')
-        _LOG.info(f'Added item to Audit table: {item}')
+                if old_value != new_value:
+                    audit_data["updatedAttribute"] = "value"
+                    audit_data["oldValue"] = old_value
 
-        return {
-            'message': 'Successfully added Audit record',
-            'response': response
-        }
+            print(f"Creating audit record for item: {item_key}")
+            audit_table.put_item(Item=audit_data)
+
+        return 200
 
 
 HANDLER = AuditProducer()
