@@ -17,7 +17,8 @@
   "event_sources": [
     {
       "resource_type" : "sqs_trigger",
-      "target_queue" : "async_queue"
+      "target_queue" : "async_queue",
+      "region": "${region}"
     }
   ],
   "env_variables": {},

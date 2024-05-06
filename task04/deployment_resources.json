@@ -41,18 +41,5 @@
     "resource_type": "sns_topic",
     "region": "eu-central-1",
     "event_sources": []
-  },
-  "lambda_role": {
-    "resource_type": "iam_role",
-    "principal_service": "lambda",
-    "predefined_policies": [
-      "AWSLambdaSQSQueueExecutionRole"
-    ],
-    "custom_policies": [],
-   "allowed_accounts": [
-        "${account_id}"
-      ],
-    "instance_profile": false,
-    "permissions_boundary": ""
   }
 }
