@@ -16,8 +16,9 @@ class SqsHandler(AbstractLambda):
         """
         message = event['Records'][0]['body']
         # Print the message to CloudWatch Logs
-        print('SQS Message: ', message)
-        return 200
+        print(message)
+        _LOG.info(event)
+        return event
 
 
 HANDLER = SqsHandler()
