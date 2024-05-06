@@ -26,7 +26,7 @@ class ApiHandler(AbstractLambda):
         dynamodb = boto3.resource('dynamodb')
 
         # Get the DynamoDB table
-        # table = dynamodb.Table('cmtr-20cb4162-Events')
+        # table = dynamodb.Table('Events')
         table_name = os.environ.get('TARGET_TABLE')
         _LOG.info(f'TARGET_TABLE: {table_name}')
         table = dynamodb.Table(table_name)
@@ -39,7 +39,7 @@ class ApiHandler(AbstractLambda):
                 "id": str(uuid.uuid4()),
                 "principalId": event['principalId'],
                 "createdAt": iso_format,
-                "body": event
+                "body": event['content']
             }
         except Exception as error:
             _LOG.warning(error)
@@ -57,7 +57,7 @@ class ApiHandler(AbstractLambda):
             event = data
 
         response = table.put_item(Item=item)
-
+        _LOG.info(f'DynamoDB put_item response: {response}')
         return {
             "statusCode": 201,
             "event": event,
