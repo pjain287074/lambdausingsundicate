@@ -1,7 +1,7 @@
 from commons.log_helper import get_logger
 from commons.abstract_lambda import AbstractLambda
 
-_LOG = get_logger('SnsHandler-handler')
+# _LOG = get_logger('SnsHandler-handler')
 
 
 class SnsHandler(AbstractLambda):
@@ -15,7 +15,7 @@ class SnsHandler(AbstractLambda):
         """
         message = event['Records'][0]['body']
         # Print the message to CloudWatch Logs
-        print('SQS Message: ', message)
+        print(message)
         return 200
 
 
