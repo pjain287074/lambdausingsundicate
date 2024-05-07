@@ -46,6 +46,7 @@ class AuditProducer(AbstractLambda):
                 if old_value != new_value:
                     audit_data["updatedAttribute"] = "value"
                     audit_data["oldValue"] = old_value
+                    audit_data["newValue"] = new_value
 
             print(f"Creating audit record for item: {item_key}")
             audit_table.put_item(Item=audit_data)
