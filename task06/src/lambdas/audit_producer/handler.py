@@ -2,6 +2,7 @@ import datetime
 import json
 import uuid
 import boto3
+import os
 from boto3.dynamodb.conditions import Key
 from commons.log_helper import get_logger
 from commons.abstract_lambda import AbstractLambda
@@ -18,7 +19,9 @@ class AuditProducer(AbstractLambda):
         """
         Explain incoming event here
         """
-        audit_table = dynamodb.Table('Audit')
+        target_table = os.environ.get('target_table')
+        _LOG.info(f'target_table: {target_table}')
+        audit_table = dynamodb.Table(target_table)
 
         for record in event['Records']:
             new_image = record['dynamodb']['NewImage']
