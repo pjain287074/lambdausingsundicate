@@ -19,7 +19,7 @@ class AuditProducer(AbstractLambda):
         """
         Explain incoming event here
         """
-        target_table = os.environ.get('target_table')
+        target_table = os.environ.get('TARGET_TABLE')
         _LOG.info(f'target_table: {target_table}')
         audit_table = dynamodb.Table(target_table)
 
