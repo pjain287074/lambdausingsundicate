@@ -1,1 +1,1 @@
-# list of requirements
+requests==2.31.0

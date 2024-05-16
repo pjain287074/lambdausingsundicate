@@ -11,8 +11,8 @@ class OpenMeteoAPI:
     def __init__(self) -> None:
         self.url = "https://api.open-meteo.com/v1/forecast"
 
-    def get_weather_forecast(self, latitude: float, longitude: float) -> dict:
-
+    def get_weather_forecast(self, latitude: float, longitude: float) -> dict: 
+        
         try:
             response = requests.get(
                 url=self.url,
@@ -26,7 +26,7 @@ class OpenMeteoAPI:
             forecast = response.json()
         except Exception as e:
             _LOG.error(f"Failed to get weather forecast: {e}")
-            raise
+            raise 
         return forecast
 
 
@@ -38,7 +38,7 @@ class ApiHandler(AbstractLambda):
 
     def validate_request(self, event) -> dict:
         pass
-
+        
     def handle_request(self, event, context):
         """
         Explain incoming event here
@@ -50,6 +50,7 @@ class ApiHandler(AbstractLambda):
         path = event["requestContext"]["http"]["path"]
 
         if method == "GET" and path == "/weather":
+
             latitude = 48.8566
             longitude = 2.3522
             forecast = open_meteo_api.get_weather_forecast(latitude=latitude, longitude=longitude)
@@ -59,6 +60,7 @@ class ApiHandler(AbstractLambda):
                 "body": json.dumps(forecast)
             }
 
+    
 
 HANDLER = ApiHandler()
 
