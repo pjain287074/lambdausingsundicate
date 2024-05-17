@@ -34,7 +34,7 @@ class OpenMeteoAPI:
 
 
 open_meteo_api = OpenMeteoAPI()
-PREFIX = "cmtr-c8cf47fa-"
+PREFIX = " cmtr-66b88a3a-"
 SUFFIX = "-test"
 TABLE_NAME = f"{PREFIX}Weather{SUFFIX}"
 weather_table = boto3.resource("dynamodb").Table(TABLE_NAME)
