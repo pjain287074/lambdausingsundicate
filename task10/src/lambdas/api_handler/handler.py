@@ -100,7 +100,7 @@ def sign_in(sing_in_request):
     password = sing_in_request['password']
 
     validate_email(username)
-    validate_password(password)
+    # validate_password(password)
 
     client = boto3.client('cognito-idp')
 
