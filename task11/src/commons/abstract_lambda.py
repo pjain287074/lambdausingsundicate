@@ -28,15 +28,24 @@ class AbstractLambda:
         pass
 
     def lambda_handler(self, event, context):
-        execution_result = self.handle_request(event=event, context=context)
-
-        headers = {
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': '*',
-            'Accept-Version': '*'
-        }
-
-        execution_result['headers'] = headers
-
-        return execution_result
+        try:
+            _LOG.debug(f'Request: {event}')
+            if event.get('warm_up'):
+                return
+            errors = self.validate_request(event=event)
+            if errors:
+                return build_response(code=400,
+                                      content=errors)
+            execution_result = self.handle_request(event=event,
+                                                   context=context)
+            _LOG.debug(f'Response: {execution_result}')
+            return execution_result
+        except ApplicationException as e:
+            _LOG.error(f'Error occurred; Event: {event}; Error: {e}')
+            return build_response(code=e.code,
+                                  content=e.content)
+        except Exception as e:
+            _LOG.error(
+                f'Unexpected error occurred; Event: {event}; Error: {e}')
+            return build_response(code=500,
+                                  content='Internal server error')

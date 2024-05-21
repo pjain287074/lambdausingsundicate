@@ -2,11 +2,11 @@
   "openapi": "3.0.1",
   "info": {
     "title": "task11_api",
-    "version": "2024-05-19T13:48:03Z"
+    "version": "2024-05-20T19:07:57Z"
   },
   "servers": [
     {
-      "url": "https://njbrewikh4.execute-api.eu-central-1.amazonaws.com/{basePath}",
+      "url": "https://j4lqurlccl.execute-api.eu-central-1.amazonaws.com/{basePath}",
       "variables": {
         "basePath": {
           "default": "api"
@@ -17,6 +17,8 @@
   "paths": {
     "/reservations": {
       "get": {
+        "summary": "Get all reservations",
+        "description": "Get all reservations",
         "responses": {
           "200": {
             "description": "200 response",
@@ -38,7 +40,7 @@
         },
         "security": [
           {
-            "task10-authorizer": []
+            "authorizer": []
           }
         ],
         "x-amazon-apigateway-integration": {
@@ -57,6 +59,8 @@
         }
       },
       "post": {
+        "summary": "Create a reservation",
+        "description": "Create a reservation",
         "responses": {
           "200": {
             "description": "200 response",
@@ -88,7 +92,7 @@
         },
         "security": [
           {
-            "task10-authorizer": []
+            "authorizer": []
           }
         ],
         "x-amazon-apigateway-integration": {
@@ -109,6 +113,8 @@
     },
     "/tables": {
       "get": {
+        "summary": "Get all tables",
+        "description": "Get all tables",
         "responses": {
           "200": {
             "description": "200 response",
@@ -130,7 +136,7 @@
         },
         "security": [
           {
-            "task10-authorizer": []
+            "authorizer": []
           }
         ],
         "x-amazon-apigateway-integration": {
@@ -149,6 +155,8 @@
         }
       },
       "post": {
+        "summary": "Create a table",
+        "description": "Create a table",
         "responses": {
           "200": {
             "description": "200 response",
@@ -180,7 +188,7 @@
         },
         "security": [
           {
-            "task10-authorizer": []
+            "authorizer": []
           }
         ],
         "x-amazon-apigateway-integration": {
@@ -201,6 +209,8 @@
     },
     "/signin": {
       "post": {
+        "summary": "Sign in",
+        "description": "Sign in",
         "responses": {
           "200": {
             "description": "200 response",
@@ -214,7 +224,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserSignin"
+                  "$ref": "#/components/schemas/Signin"
                 }
               }
             }
@@ -225,7 +235,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserSignin"
+                "$ref": "#/components/schemas/Signin"
               }
             }
           }
@@ -248,6 +258,8 @@
     },
     "/signup": {
       "post": {
+        "summary": "Sign up",
+        "description": "Sign up",
         "responses": {
           "200": {
             "description": "200 response",
@@ -261,7 +273,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserSignup"
+                  "$ref": "#/components/schemas/Signup"
                 }
               }
             }
@@ -272,7 +284,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserSignup"
+                "$ref": "#/components/schemas/Signup"
               }
             }
           }
@@ -295,6 +307,8 @@
     },
     "/tables/{tableId}": {
       "get": {
+        "summary": "Get table by id",
+        "description": "Get table by id",
         "parameters": [
           {
             "name": "tableId",
@@ -326,7 +340,7 @@
         },
         "security": [
           {
-            "task10-authorizer": []
+            "authorizer": []
           }
         ],
         "x-amazon-apigateway-integration": {
@@ -348,26 +362,37 @@
   },
   "components": {
     "schemas": {
-      "UserSignup": {
+      "Empty": {
+        "title": "Empty Schema",
+        "type": "object"
+      },
+      "Signup": {
+        "title": "Signup Schema",
         "type": "object",
         "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          },
           "firstName": {
             "type": "string"
           },
           "lastName": {
             "type": "string"
-          },
-          "email": {
-            "type": "string",
-            "format": "email"
-          },
-          "password": {
-            "type": "string"
           }
         },
-        "required": ["firstName", "lastName", "email", "password"]
+        "required": [
+          "email",
+          "password",
+          "firstName",
+          "lastName"
+        ]
       },
-       "UserSignin": {
+      "Signin": {
+        "title": "Signin Schema",
         "type": "object",
         "properties": {
           "email": {
@@ -378,9 +403,13 @@
             "type": "string"
           }
         },
-        "required": ["email", "password"]
+        "required": [
+          "email",
+          "password"
+        ]
       },
       "Table": {
+        "title": "Table Schema",
         "type": "object",
         "properties": {
           "id": {
@@ -399,9 +428,15 @@
             "type": "integer"
           }
         },
-        "required": ["id", "number", "places", "isVip", "minOrder"]
+        "required": [
+          "id",
+          "number",
+          "places",
+          "isVip"
+        ]
       },
       "Reservation": {
+        "title": "Reservation Schema",
         "type": "object",
         "properties": {
           "tableNumber": {
@@ -424,22 +459,25 @@
             "type": "string"
           }
         },
-        "required": ["tableNumber", "clientName", "phoneNumber", "date", "slotTimeStart", "slotTimeEnd"]
-      },
-      "Empty": {
-        "title": "Empty Schema",
-        "type": "object"
+        "required": [
+          "tableNumber",
+          "clientName",
+          "phoneNumber",
+          "date",
+          "slotTimeStart",
+          "slotTimeEnd"
+        ]
       }
     },
     "securitySchemes": {
-      "task10-authorizer": {
+      "authorizer": {
         "type": "apiKey",
         "name": "Authorization",
         "in": "header",
         "x-amazon-apigateway-authtype": "cognito_user_pools",
         "x-amazon-apigateway-authorizer": {
-          "providerARNs": [
-            "arn:aws:cognito-idp:eu-central-1:905418349556:userpool/eu-central-1_pbsE7cDs0"
+          "x-syndicate-cognito-userpool-names": [
+            "simple-booking-userpool"
           ],
           "type": "cognito_user_pools"
         }
