@@ -1,361 +1,397 @@
-import datetime
-import decimal
 import json
-import typing as t
-import uuid
+import os
 import re
+import traceback
+import uuid
+from datetime import datetime
+from decimal import Decimal
 
 import boto3
-
 from commons.log_helper import get_logger
 from commons.abstract_lambda import AbstractLambda
 
 _LOG = get_logger('ApiHandler-handler')
-PREFIX = "cmtr-c8cf47fa-"
-SUFFIX = "-test"
-USER_POOL_NAME = f"{PREFIX}simple-booking-userpool{SUFFIX}"
-USER_POOL_CLIENT_NAME = "simple-booking-client"
-cognito_client = boto3.client("cognito-idp")
-tables_table = boto3.resource("dynamodb").Table(f"{PREFIX}Tables{SUFFIX}")
-reservations_table = boto3.resource("dynamodb").Table(f"{PREFIX}Reservations{SUFFIX}")
+
+
+def is_time_in_slot(start: str, end: str, tested_time):
+    # Convert strings to time objects
+    start = datetime.strptime(start, "%H:%M").time()
+    end = datetime.strptime(end, "%H:%M").time()
+    time = datetime.strptime(tested_time, "%H:%M").time()
+
+    # Check if the given time is within the slot
+    return start <= time <= end
+
+
+def convert_decimals_to_int(i):
+    if isinstance(i, list):
+        return [convert_decimals_to_int(i) for i in i]
+    elif isinstance(i, dict):
+        return {k: convert_decimals_to_int(v) for k, v in i.items()}
+    elif isinstance(i, Decimal):
+        return int(i)
+    else:
+        return i
+
+
+def validate_email(email):
+    # Regular expression for email validation
+    pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    if not re.match(pattern, email):
+        _LOG.info('Bad email')
+        raise Exception('Bad email')
+
+
+def validate_password(password):
+    # Regular expression for password validation
+    pattern = r'^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^\w\s]).{12,}$'
+    if not re.match(pattern, password):
+        _LOG.info('Bad password')
+        raise Exception('Bad password')
+
+
+def write_to_dynamo(table_name: str, item: dict):
+    dynamodb = boto3.resource('dynamodb')
+
+    _LOG.info(f'TARGET_TABLE: {table_name}')
+    table = dynamodb.Table(table_name)
+    # item = json.loads(json.dumps(item), parse_float=Decimal)
+    dynamo_response = table.put_item(Item=item)
+    _LOG.info(dynamo_response)
+
+
+def sign_up(sing_up_request: dict):
+    _LOG.info('Sign up request')
+    client = boto3.client('cognito-idp')
+
+    user_pool_name = os.environ['USER_POOL']
+    _LOG.info(f'user_pool_name: {user_pool_name}')
+
+    response = client.list_user_pools(MaxResults=60)
+
+    user_pool_id = None
+    for user_pool in response['UserPools']:
+        if user_pool['Name'] == user_pool_name:
+            user_pool_id = user_pool['Id']
+            _LOG.info(f'user_pool_id: {user_pool_id}')
+            break
+
+    username = sing_up_request['email']
+    password = sing_up_request['password']
+    given_name = sing_up_request['firstName']
+    family_name = sing_up_request['lastName']
+
+    validate_email(username)
+    validate_password(password)
+
+    # Create the user
+    response = client.admin_create_user(
+        UserPoolId=user_pool_id,
+        Username=username,
+        UserAttributes=[
+            {
+                'Name': 'email',
+                'Value': username
+            },
+            {
+                'Name': 'given_name',
+                'Value': given_name
+            },
+            {
+                'Name': 'family_name',
+                'Value': family_name
+            },
+        ],
+        TemporaryPassword=password,
+        MessageAction='SUPPRESS'
+    )
+
+    _LOG.info(f'Cognito sign up response: {response}')
+
+    # Set a new permanent password for the user
+    resp = client.admin_set_user_password(
+        UserPoolId=user_pool_id,
+        Username=username,
+        Password=password,
+        Permanent=True
+    )
+
+    _LOG.info(f'set_user_password permanent response: {resp}')
+
+
+def sign_in(sing_in_request):
+    _LOG.info('Sign in request')
+
+    username = sing_in_request['email']
+    password = sing_in_request['password']
+
+    validate_email(username)
+    validate_password(password)
+
+    client = boto3.client('cognito-idp')
+
+    user_pool_name = os.environ['USER_POOL']
+    _LOG.info(f'user_pool_name: {user_pool_name}')
+
+    response = client.list_user_pools(MaxResults=60)
+
+    user_pool_id = None
+    for user_pool in response['UserPools']:
+        if user_pool['Name'] == user_pool_name:
+            user_pool_id = user_pool['Id']
+            _LOG.info(f'user_pool_id: {user_pool_id}')
+            break
+
+    response = client.list_user_pool_clients(
+        UserPoolId=user_pool_id,
+        MaxResults=10
+    )
+
+    client_app = 'my_client_app'
+    for app_client in response['UserPoolClients']:
+        if app_client['ClientName'] == client_app:
+            app_client_id = app_client['ClientId']
+
+    response = client.initiate_auth(
+        ClientId=app_client_id,
+        AuthFlow='USER_PASSWORD_AUTH',
+        AuthParameters={
+            'USERNAME': username,
+            'PASSWORD': password
+        }
+    )
+
+    access_token = response['AuthenticationResult']['AccessToken']
+    id_token = response['AuthenticationResult']['IdToken']
+
+    _LOG.info(f'Cognito sign in response: {response}')
+
+    return {
+        'statusCode': 200,
+        # 'body': json.dumps({'accessToken': access_token})
+        'body': json.dumps({'accessToken': id_token})
+    }
+
+
+def tables_post(item: dict):
+    _LOG.info('/tables POST')
+    _LOG.info(f'item: {item}')
+    try:
+        table_name = os.environ['TABLES_TABLE']
+        _LOG.info(f'TABLES_TABLE: {table_name}')
+        write_to_dynamo(table_name, item)
+    except Exception as error:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': error})
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'id': item['id']})
+        }
+
+
+def tables_get() -> dict:
+    _LOG.info('/tables GET')
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ['TABLES_TABLE']
+        _LOG.info(f'TABLES_TABLE: {table_name}')
+
+        table = dynamodb.Table(table_name)
+        response = table.scan()
+        items = response['Items']
+        items = convert_decimals_to_int(items)
+        items = sorted(items, key=lambda item: item['id'])
+
+        result = {'tables': items}
+        _LOG.info(f'Tables fetched: {result}')
+    except Exception as error:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': error})
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
+
+
+def tables_get_by_id(table_id: int) -> dict:
+    try:
+        _LOG.info('/tables/{tableId} GET')
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ['TABLES_TABLE']
+        _LOG.info(f'TABLES_TABLE: {table_name}')
+
+        table = dynamodb.Table(table_name)
+        item = table.get_item(Key={'id': int(table_id)})
+        item = item['Item']
+        item = convert_decimals_to_int(item)
+        _LOG.info(item)
+    except Exception as error:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': error})
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'body': json.dumps(item)
+        }
+
+
+def reservations_post(item: dict):
+    _LOG.info('/reservations POST')
+    _LOG.info(f'item: {item}')
+
+    # Check if a table exists
+    table_name = os.environ['TABLES_TABLE']
+    _LOG.info(f'TABLES_TABLE (reserv post): {table_name}')
+    dynamodb = boto3.resource('dynamodb')
+
+    table = dynamodb.Table(table_name)
+    response = table.scan()
+    _LOG.info(f'Scan response: {response}')
+    items = response['Items']
+    items = convert_decimals_to_int(items)
+
+    required_table_number = item['tableNumber']
+    for table in items:
+        _LOG.info(f'table item: {table}')
+        if table['number'] == required_table_number:
+            _LOG.info(f'Table found: {required_table_number}')
+            break
+    else:
+        _LOG.info(f'No such table')
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': 'Table does not exist'})
+        }
+
+    # Handle conflicting reservations
+    reservations = _get_reservations()
+    # {'reservations': [{'phoneNumber': '0661902100', 'clientName': 'John Doe', 'date': '2024-05-19', 'slotTimeStart': '13:00', 'slotTimeEnd': '15:00', 'id': '6cfd60a3-b575-4a62-8596-00be6bc61f08', 'tableNumber': 25}]}
+    for i in reservations['reservations']:
+        if i['date'] == item['date'] and i['tableNumber'] == item['tableNumber']:
+            if is_time_in_slot(i['slotTimeStart'], i['slotTimeEnd'], item['slotTimeStart']) or is_time_in_slot(
+                    i['slotTimeStart'], i['slotTimeEnd'], item['slotTimeEnd']):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'Error message': f'Overlapping time'})
+                }
+
+    try:
+        table_name = os.environ['RESERVATION_TABLE']
+        _LOG.info(f'RESERVATION_TABLE try: {table_name}')
+        reservation_id = str(uuid.uuid4())
+        item.update({'id': reservation_id})
+        _LOG.info(f'updated item: {item}')
+        write_to_dynamo(table_name, item)
+    except Exception as error:
+        traceback_str = traceback.format_exc()
+        print(traceback_str)
+
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': error})
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'reservationId': reservation_id})
+        }
+
+
+def _get_reservations() -> dict:
+    dynamodb = boto3.resource('dynamodb')
+    table_name = os.environ['RESERVATION_TABLE']
+    _LOG.info(f'RESERVATION_TABLE: {table_name}')
+
+    table = dynamodb.Table(table_name)
+    response = table.scan()
+    items = response['Items']
+    items = convert_decimals_to_int(items)
+
+    result = {'reservations': items}
+    _LOG.info(f'Reservations fetched: {result}')
+    return result
+
+
+def reservations_get() -> dict:
+    _LOG.info('/reservations GET')
+    try:
+        result = _get_reservations()
+
+    except Exception as error:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'Error message': error})
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'body': json.dumps(result)
+        }
 
 
 class ApiHandler(AbstractLambda):
 
-    def validate_request(self, event: dict) -> t.Optional[dict]:
-        pass
+    def handle_request(self, event, context):
+        _LOG.info(f'Event: {event}')
 
-    def handle_request(self, event: dict, context: dict) -> dict:
-
-        _LOG.info(f"Event: {event}")
         try:
-            method = event["httpMethod"]
-            path = event["path"]
-            request_body = {}
-            if "body" in event and event["body"] is not None:
-                request_body = json.loads(event["body"])
-            _LOG.info(f"Method: {method}, Path: {path}, Request body: {request_body}")
-
-            if method == "POST" and path == "/signup":
-                email = request_body["email"]
-                first_name = request_body["firstName"]
-                last_name = request_body["lastName"]
-                password = request_body["password"]
-
-                self.signup(email, first_name, last_name, password)
-
-                return {"statusCode": 200}
-            elif method == "POST" and path == "/signin":
-                email = request_body["email"]
-                password = request_body["password"]
-
-                access_token = self.signin(email, password)
-
+            if event['path'] == '/signup' and event['httpMethod'] == 'POST':
+                body = json.loads(event['body'])
+                sign_up(body)
                 return {
-                    "statusCode": 200,
-                    "body": json.dumps({"accessToken": access_token})
+                    'statusCode': 200,
+                    'body': json.dumps({'status': 200, 'message': 'Signup successful'})
                 }
-            elif method == "GET" and path == "/tables":
-                # self.authorize_user(event)
-
-                tables = self.get_tables()
-                _LOG.info(f"Tables: {tables}")
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "tables": tables
-                    })
-                }
-            elif method == "POST" and path == "/tables":
-                # self.authorize_user(event)
-                id = int(request_body["id"])
-                number = int(request_body["number"])
-                places = int(request_body["places"])
-                is_vip = bool(request_body["isVip"])
-                min_order = None
-                if "minOrder" in request_body:
-                    min_order = int(request_body["minOrder"])
-
-                table_id = self.create_table(id, number, places, is_vip, min_order)
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "id": table_id
-                    })
-                }
-            elif method == "GET" and re.match(r"^/tables/\d+$", path):
-                # self.authorize_user(event)
-                table_id = int(path.split("/")[-1])
-
-                table = self.get_table(table_id)
-                _LOG.info(f"Table: {table}")
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps(table)
-                }
-            elif method == "POST" and path == "/reservations":
-                # self.authorize_user(event)
-                table_number = int(request_body["tableNumber"])
-                client_name = request_body["clientName"]
-                phone_number = request_body["phoneNumber"]
-                date = request_body["date"]
-                slot_time_start = request_body["slotTimeStart"]
-                slot_time_end = request_body["slotTimeEnd"]
-
-                reservation = self.create_reservation(
-                    table_number, 
-                    client_name, 
-                    phone_number, 
-                    date, 
-                    slot_time_start, 
-                    slot_time_end
-                )
-                _LOG.info(f"Reservation: {reservation}")
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({"reservationId": reservation})
-                }
-            elif method == "GET" and path == "/reservations":
-                # self.authorize_user(event)
-
-                reservations = self.get_reservations()
-                _LOG.info(f"Reservations: {reservations}")
-
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({
-                        "reservations": reservations
-                    })
-                }
+            elif event['path'] == '/signin' and event['httpMethod'] == 'POST':
+                body = json.loads(event['body'])
+                lambda_response_with_token = sign_in(body)
+                _LOG.info(f'lambda_response: {lambda_response_with_token}')
+                return lambda_response_with_token
+            elif event['path'] == '/tables' and event['httpMethod'] == 'POST':
+                body = json.loads(event['body'])
+                return tables_post(body)
+            elif event['path'] == '/tables' and event['httpMethod'] == 'GET':
+                return tables_get()
+            elif event['resource'] == '/tables/{tableId}' and event['httpMethod'] == 'GET':
+                table_id = int(event['path'].split('/')[-1])
+                return tables_get_by_id(table_id)
+            elif event['path'] == '/reservations' and event['httpMethod'] == 'POST':
+                body = json.loads(event['body'])
+                return reservations_post(body)
+            elif event['path'] == '/reservations' and event['httpMethod'] == 'GET':
+                return reservations_get()
             else:
-                _LOG.error(f"Path not found: {path}")
+                _LOG.info('Unsupported request type for my task10 app')
                 return {
-                    "statusCode": 404,
-                    "body": "Not Found"
+                    'statusCode': 400,
+                    'body': json.dumps({'Error message': 'Unsupported request type for my task10 app'})
                 }
-        except Exception as e:
-            _LOG.error(f"Failed to handle request: {e}")
-            return {"statusCode": 400}
+        except Exception as error:
+            _LOG.info('Invalid request')
+            _LOG.info(f'Error: {error}')
 
-    def get_user_pool_id(self, user_pool_name: str) -> str:
-
-        user_pool_id = None
-        response = cognito_client.list_user_pools(MaxResults=50)
-        _LOG.info(f"User pools: {response}")
-
-        user_pool_id = None
-        for user_pool in response["UserPools"]:
-            if user_pool["Name"] == user_pool_name:
-                user_pool_id = user_pool["Id"]
-                break
-
-        if user_pool_id is None:
-            raise ValueError(f"User pool {USER_POOL_NAME} not found")
-
-        return user_pool_id
-    
-    def get_user_pool_client_id(self, user_pool_id: str) -> str:
-
-        client_id = None
-        response = cognito_client.list_user_pool_clients(
-            UserPoolId=user_pool_id,
-            MaxResults=50
-        )
-        _LOG.info(f"User pool clients: {response}")
-
-        for client in response["UserPoolClients"]:
-            if client["ClientName"] == USER_POOL_CLIENT_NAME:
-                client_id = client["ClientId"]
-                break
-
-        if client_id is None:
-            raise ValueError(f"User pool client not found")
-
-        return client_id
-
-    def serialize(self, data: t.Any) -> t.Any:
-
-        if isinstance(data, list):
-            return [self.serialize(item) for item in data]
-        elif isinstance(data, dict):
-            return {key: self.serialize(value) for key, value in data.items()}
-        elif isinstance(data, decimal.Decimal):
-            return int(data)
-
-        return data
-
-    def validate_email(self, email: str) -> None:
-
-        pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-        if not re.match(pattern, email):
-            raise ValueError("Invalid email")
-
-    def validate_password(self, password: str) -> None:
-        
-        if not re.match(r"^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^\w\s]).{12,}$", password):
-            raise ValueError("Invalid password")
-    
-    def signup(self, email: str, first_name: str, last_name: str, password: str) -> None:
-        _LOG.info(f"Signing up user: {email}")
-
-        self.validate_email(email)
-        self.validate_password(password)
-
-        user_pool_id = self.get_user_pool_id(USER_POOL_NAME)
-
-        response = cognito_client.admin_create_user(
-            UserPoolId=user_pool_id,
-            Username=email,
-            UserAttributes=[
-                {
-                    "Name": "given_name",
-                    "Value": first_name 
-                },
-                {
-                    "Name": "family_name",
-                    "Value": last_name 
-                },
-                {
-                    "Name": "email",
-                    "Value": email 
-                }
-            ],
-            TemporaryPassword=password,
-            MessageAction="SUPPRESS",
-        )
-        _LOG.info(f"create user response: {response}")
-
-        response = cognito_client.admin_set_user_password(
-            UserPoolId=user_pool_id,
-            Username=email,
-            Password=password,
-            Permanent=True,
-        )
-        _LOG.info(f"set user password response: {response}")
-
-    def signin(self, email: str, password: str) -> str:
-        _LOG.info(f"Signing in user: {email}")
-
-        self.validate_email(email)
-        self.validate_password(password)
-
-        user_pool_id = self.get_user_pool_id(USER_POOL_NAME)
-        client_id = self.get_user_pool_client_id(user_pool_id)
-
-        response = cognito_client.initiate_auth(
-            ClientId=client_id,
-            AuthFlow="USER_PASSWORD_AUTH",
-            AuthParameters={
-                "USERNAME": email,
-                "PASSWORD": password
+            lambda_error_response = {
+                'statusCode': 400,
+                'body': json.dumps({
+                    'statusCode': 400,
+                    'error': 'Bad request',
+                    'message': f'{error}'
+                })
             }
-        )
-        access_token = response["AuthenticationResult"]["IdToken"]
-        return access_token
+            traceback_str = traceback.format_exc()
+            print(traceback_str)
 
-    def get_tables(self) -> list[dict]:
-        _LOG.info("Getting tables")
-        response = tables_table.scan()
-        tables = response["Items"]
-        tables = self.serialize(tables)
-        tables = sorted(tables, key=lambda table: table["id"])
-        return tables
+            _LOG.info(f'lambda_error_response: {lambda_error_response}')
+            return lambda_error_response
 
-    def create_table(
-        self, 
-        id: int, 
-        number: int, 
-        places: int,
-        is_vip: bool,
-        min_order: t.Optional[int] = None,
-    ) -> int:
-        _LOG.info(f"Creating table: {id}")
-        item = {
-            "id": id,
-            "number": number,
-            "places": places,
-            "isVip": is_vip,
-        } 
-        if min_order is not None:
-            item["minOrder"] = min_order
-        tables_table.put_item(Item=item)
-        return id 
-    
-    def is_overlapping(
-        self,
-        start1: str,
-        end1: str, 
-        start2: str,
-        end2: str,
-    ) -> bool:
-
-        start1 = datetime.datetime.strptime(start1, "%H:%M").time()
-        end1= datetime.datetime.strptime(end1, "%H:%M").time()
-        start2 = datetime.datetime.strptime(start2, "%H:%M").time()
-        end2 = datetime.datetime.strptime(end2, "%H:%M").time()
-
-        if start1 <= start2 <= end1 or start1 <= end2 <= end1:
-            return True
-
-        return False
-
-    def get_table(self, table_id: int) -> dict:
-        _LOG.info(f"Getting table: {table_id}")
-        response = tables_table.get_item(Key={"id": table_id})
-        table = response["Item"]
-        table = self.serialize(table)
-        return table
-
-    def create_reservation(
-        self, 
-        table_number: int, 
-        client_name: str,
-        phone_number: str,
-        date: str,
-        slot_time_start: str,
-        slot_time_end: str,
-    ) -> str:
-        _LOG.info(f"Creating reservation for table: {table_number}")
-
-        response = tables_table.scan() 
-        tables = response["Items"]
-        for table in tables:
-            if table["number"] == table_number:
-                break
-        else:
-            raise ValueError(f"Table {table_number} not found")
-
-        reservations = self.get_reservations()
-        for reservation in reservations:
-            if reservation["tableNumber"] == table_number and reservation["date"] == date:
-                reservation_start = reservation["slotTimeStart"]
-                reservation_end = reservation["slotTimeEnd"]
-                if self.is_overlapping(reservation_start, reservation_end, slot_time_start, slot_time_end):
-                    raise ValueError("Reservation time is overlapping with another reservation")
-
-        reservation_id = str(uuid.uuid4())
-        item = {
-            "id": reservation_id,
-            "tableNumber": table_number,
-            "clientName": client_name,
-            "phoneNumber": phone_number,
-            "date": date,
-            "slotTimeStart": slot_time_start,
-            "slotTimeEnd": slot_time_end,
-        }
-        reservations_table.put_item(Item=item)
-        return reservation_id
-
-    def get_reservations(self) -> list[dict]:
-        _LOG.info("Getting reservations")
-        response = reservations_table.scan()
-        reservations = response["Items"]
-        reservations = self.serialize(reservations)
-        return reservations
 
 HANDLER = ApiHandler()
 
