@@ -11,7 +11,7 @@ from commons.log_helper import get_logger
 from commons.abstract_lambda import AbstractLambda
 
 _LOG = get_logger('ApiHandler-handler')
-PREFIX = "cmtr-c8cf47fa-"
+PREFIX = "cmtr-66b88a3a-"
 SUFFIX = "-test"
 USER_POOL_NAME = f"{PREFIX}simple-booking-userpool{SUFFIX}"
 USER_POOL_CLIENT_NAME = "simple-booking-client"
