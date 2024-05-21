@@ -189,8 +189,9 @@ class ApiHandler(AbstractLambda):
         return data
 
     def validate_email(self, email: str) -> None:
-        
-        if not re.match(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", email):
+
+        pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+        if not re.match(pattern, email):
             raise ValueError("Invalid email")
 
     def validate_password(self, password: str) -> None:
